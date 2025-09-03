@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import frFlag from "../assets/fr_flag.jpeg";
+import enFlag from "../assets/en_flag.jpeg";
+import viFlag from "../assets/vn_flag.png";
+
 function GreenChargeLogo() {
   return (
     <div className="flex items-center gap-2">
@@ -63,9 +67,7 @@ export default function Authentification() {
 
   const t = messages[lang];
 
-  const handleLangChange = (code) => {
-    setLang(code);
-  };
+  const handleLangChange = (code) => setLang(code);
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -82,27 +84,59 @@ export default function Authentification() {
           <GreenChargeLogo />
         </header>
 
-        <div className="mt-8 flex items-center justify-center gap-6 text-3xl">
+        <div className="mt-8 flex items-center justify-center gap-6">
           <button
-            aria-label="Vietnamese"
+            type="button"
+            aria-label="Tiếng Việt"
             onClick={() => handleLangChange("vi")}
-            className={lang === "vi" ? "scale-110" : ""}
+            className={`rounded-md p-1 transition ${
+              lang === "vi"
+                ? "ring-2 ring-green-600 scale-105"
+                : "hover:scale-105"
+            }`}
           >
-            🇻🇳
+            <img
+              src={viFlag}
+              alt="Vietnamese flag"
+              className="h-10 w-16 object-cover rounded"
+              loading="lazy"
+            />
           </button>
+
           <button
+            type="button"
             aria-label="English"
             onClick={() => handleLangChange("en")}
-            className={lang === "en" ? "scale-110" : ""}
+            className={`rounded-md p-1 transition ${
+              lang === "en"
+                ? "ring-2 ring-green-600 scale-105"
+                : "hover:scale-105"
+            }`}
           >
-            🇬🇧
+            <img
+              src={enFlag}
+              alt="UK flag"
+              className="h-10 w-16 object-cover rounded"
+              loading="lazy"
+            />
           </button>
+
           <button
+            type="button"
             aria-label="Français"
             onClick={() => handleLangChange("fr")}
-            className={lang === "fr" ? "scale-110" : ""}
+            className={`rounded-md p-1 transition ${
+              lang === "fr"
+                ? "ring-2 ring-green-600 scale-105"
+                : "hover:scale-105"
+            }`}
           >
-            🇫🇷
+            <img
+              src={frFlag}
+              alt="French flag"
+              className="h-10 w-16 object-cover rounded"
+              loading="lazy"
+            />
           </button>
         </div>
 

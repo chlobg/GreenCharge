@@ -1,4 +1,3 @@
-// src/Component/Planification.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
@@ -25,6 +24,30 @@ function GreenChargeLogo() {
       </span>
     </div>
   );
+}
+
+const API_BASE = "http://localhost:3001";
+
+async function getJSON(url, options) {
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", ...(options?.headers || {}) },
+    ...options,
+  });
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json")
+    ? await res.json()
+    : await res.text();
+  if (!res.ok) {
+    const msg =
+      typeof body === "string"
+        ? body.slice(0, 180)
+        : body?.error || res.statusText;
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  if (typeof body === "string") {
+    throw new Error(`Non-JSON response: ${body.slice(0, 120)}`);
+  }
+  return body;
 }
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -129,7 +152,6 @@ export default function Planification() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // langue depuis Authentification (localStorage.gc_lang), défaut FR
   const lang = useMemo(() => localStorage.getItem("gc_lang") || "fr", []);
   const t = DICTS[lang] || DICTS.fr;
   const locale = lang === "fr" ? "fr-FR" : lang === "vi" ? "vi-VN" : "en-GB";
@@ -154,12 +176,12 @@ export default function Planification() {
         throw new Error(t.errEmpty);
       }
 
-      const g1 = await fetch(
-        `/api/geocode?q=${encodeURIComponent(departAddr)}`
-      ).then((r) => r.json());
-      const g2 = await fetch(
-        `/api/geocode?q=${encodeURIComponent(arriveeAddr)}`
-      ).then((r) => r.json());
+      const g1 = await getJSON(
+        `${API_BASE}/api/geocode?q=${encodeURIComponent(departAddr)}`
+      );
+      const g2 = await getJSON(
+        `${API_BASE}/api/geocode?q=${encodeURIComponent(arriveeAddr)}`
+      );
       if (g1.error || g2.error) throw new Error(t.errGeo);
 
       const payload = {
@@ -170,11 +192,12 @@ export default function Planification() {
         forceCharge,
         topupKWh: 10,
       };
-      const res = await fetch("/api/plan", {
+
+      const res = await getJSON(`${API_BASE}/api/plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).then((r) => r.json());
+      });
 
       if (res.error) throw new Error(res.error);
 
