@@ -7,7 +7,24 @@ import polyline from "polyline";
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173" }));
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://green-charge.vercel.app",
+];
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.options("*", cors());
 app.use(express.json());
 app.get("/", (_, res) => res.send("GreenCharge API OK"));
 

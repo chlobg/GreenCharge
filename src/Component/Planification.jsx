@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
 
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
+const api = (p) => (API_BASE ? `${API_BASE}${p}` : p);
+
 function GreenChargeLogo() {
   return (
     <div className="flex items-center gap-2">
@@ -25,8 +28,6 @@ function GreenChargeLogo() {
     </div>
   );
 }
-
-const API_BASE = "http://localhost:3001";
 
 async function getJSON(url, options) {
   const res = await fetch(url, {
@@ -177,10 +178,11 @@ export default function Planification() {
       }
 
       const g1 = await getJSON(
-        `${API_BASE}/api/geocode?q=${encodeURIComponent(departAddr)}`
+        api(`/api/geocode?q=${encodeURIComponent(departAddr)}`)
       );
+
       const g2 = await getJSON(
-        `${API_BASE}/api/geocode?q=${encodeURIComponent(arriveeAddr)}`
+        api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`)
       );
       if (g1.error || g2.error) throw new Error(t.errGeo);
 
@@ -193,7 +195,7 @@ export default function Planification() {
         topupKWh: 10,
       };
 
-      const res = await getJSON(`${API_BASE}/api/plan`, {
+      const res = await getJSON(api(`/api/plan`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
