@@ -11,13 +11,14 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "https://green-charge.vercel.app",
 ];
+const vercelPreviewRegex = /^https:\/\/.*\.vercel\.app$/;
 
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return cb(null, true);
+      if (vercelPreviewRegex.test(origin)) return cb(null, true);
       return cb(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "OPTIONS"],
@@ -25,9 +26,10 @@ app.use(
   })
 );
 app.options("*", cors());
-app.use(express.json());
-app.get("/", (_, res) => res.send("GreenCharge API OK"));
 
+app.use(express.json());
+
+app.get("/", (_, res) => res.send("GreenCharge API OK"));
 const OFFPEAK = { start: 22, end: 6 };
 const PRICES = {
   AC: { day: 0.28, night: 0.18 },
@@ -236,4 +238,7 @@ app.post("/api/plan", async (req, res) => {
   }
 });
 
-app.listen(3001, () => console.log("http://localhost:3001"));
+if (process.env.VERCEL !== "1") {
+  app.listen(3001, () => console.log("http://localhost:3001"));
+}
+export default app;
