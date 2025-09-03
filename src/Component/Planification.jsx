@@ -2,8 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
-const api = (p) => (API_BASE ? `${API_BASE}${p}` : p);
+const API_BASE = (
+  import.meta.env.VITE_API_BASE || "https://green-charge-api.vercel.app"
+).replace(/\/+$/, "");
+const api = (p) => `${API_BASE}${p}`;
+
+async function readJson(res) {
+  if (!res.ok) {
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {}
+    const msg = body || `${res.status} ${res.statusText}`;
+    throw new Error(msg);
+  }
+  return res.json();
+}
 
 function GreenChargeLogo() {
   return (
@@ -27,28 +41,6 @@ function GreenChargeLogo() {
       </span>
     </div>
   );
-}
-
-async function getJSON(url, options) {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json", ...(options?.headers || {}) },
-    ...options,
-  });
-  const ct = res.headers.get("content-type") || "";
-  const body = ct.includes("application/json")
-    ? await res.json()
-    : await res.text();
-  if (!res.ok) {
-    const msg =
-      typeof body === "string"
-        ? body.slice(0, 180)
-        : body?.error || res.statusText;
-    throw new Error(msg || `HTTP ${res.status}`);
-  }
-  if (typeof body === "string") {
-    throw new Error(`Non-JSON response: ${body.slice(0, 120)}`);
-  }
-  return body;
 }
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -177,12 +169,11 @@ export default function Planification() {
         throw new Error(t.errEmpty);
       }
 
-      const g1 = await getJSON(
-        api(`/api/geocode?q=${encodeURIComponent(departAddr)}`)
+      const g1 = await readJson(
+        await fetch(api(`/api/geocode?q=${encodeURIComponent(departAddr)}`))
       );
-
-      const g2 = await getJSON(
-        api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`)
+      const g2 = await readJson(
+        await fetch(api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`))
       );
       if (g1.error || g2.error) throw new Error(t.errGeo);
 
@@ -195,13 +186,13 @@ export default function Planification() {
         topupKWh: 10,
       };
 
-      const res = await fetch(`${API_BASE}/api/plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.error) throw new Error(res.error);
+      const res = await readJson(
+        await fetch(api("/api/plan"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      );
 
       if (!res.recommendation) {
         setResult({
@@ -240,8 +231,14 @@ export default function Planification() {
         })
       );
     } catch (e) {
+      const msg =
+        String(e.message || "")
+          .toLowerCase()
+          .includes("429") || String(e.message || "").includes("too many")
+          ? "Rate limit – please retry in a minute."
+          : e?.message || "Error";
+      setErr(msg);
       console.error(e);
-      setErr(e?.message || "Error");
     } finally {
       setLoading(false);
     }
