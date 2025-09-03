@@ -1,12 +1,57 @@
-# React + Vite
+GreenCharge ⚡
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+GreenCharge is a smart EV charging planner that helps drivers in France optimize their charging stops.
+By entering departure, destination, current autonomy, and departure time, users receive personalized charging recommendations based on cost, time of use (off-peak vs peak hours), and location of charging stations.
 
-Currently, two official plugins are available:
+✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+🔋 Smart Charging Recommendation
+Suggests the most economical charging station along the route.
 
-## Expanding the ESLint configuration
+🕒 Off-Peak Awareness
+Takes into account off-peak electricity tariffs for additional savings.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+🌍 Nationwide Coverage (France)
+Works for all routes within France using open data APIs.
+
+🗺 Interactive Map
+Visualize recommended charging stations and routes with zoom in/out.
+
+📱 Responsive UI
+Full-size layout across devices (mobile, tablet, desktop).
+
+🔐 Authentication
+Users can log in and be greeted personally.
+
+🛠 Tech Stack
+Frontend
+
+React.js
+
+Tailwind CSS
+
+React Router
+
+React Leaflet
+
+Backend
+
+Node.js
+ + Express
+
+Axios
+
+Polyline
+
+Cors
+
+APIs
+
+OpenStreetMap Nominatim
+ → Geocoding (addresses to coordinates)
+
+OSRM
+ → Route calculation
+
+OpenChargeMap
+ → Charging station data
