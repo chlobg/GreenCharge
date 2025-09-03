@@ -7,110 +7,224 @@ import polyline from "polyline";
 dotenv.config();
 
 const app = express();
-
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "https://green-charge.vercel.app",
-];
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return cb(null, true);
-      return cb(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    origin: (o, cb) => cb(null, true),
   })
 );
-app.options("*", cors());
 app.use(express.json());
+
+app.get("/", (_, res) => res.send("GreenCharge API OK"));
 
 const OFFPEAK = { start: 22, end: 6 };
 const PRICES = {
   AC: { day: 0.28, night: 0.18 },
   DC: { day: 0.45, night: 0.35 },
 };
-const OCM_KEY = process.env.OCM_KEY || "YOUR_OCM_KEY";
-
-const PROBES_MAX = 6;
-const PROBE_RADIUS_KM = 4;
-const AXIOS_TIMEOUT_MS = 5000;
-
 const isOffpeak = (d) =>
   d.getHours() >= OFFPEAK.start || d.getHours() < OFFPEAK.end;
-
 const priceAt = (type, date) =>
   isOffpeak(date) ? PRICES[type].night : PRICES[type].day;
 
+const UA = { "User-Agent": "GreenCharge/1.0 (vercel)" };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withRetry(fn, { tries = 4, baseDelay = 400 } = {}) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const status = e?.response?.status;
+      // on ne retry que 429 ou 5xx
+      if (!(status === 429 || (status >= 500 && status < 600))) break;
+      const wait = baseDelay * Math.pow(2, i) + Math.random() * 200;
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
+
+function makeCache(ttlMs = 10 * 60 * 1000) {
+  const m = new Map();
+  return {
+    async getOrSet(key, loader) {
+      const now = Date.now();
+      const hit = m.get(key);
+      if (hit && now - hit.t < ttlMs) return hit.v;
+      const v = await loader();
+      m.set(key, { t: now, v });
+      return v;
+    },
+  };
+}
+const geoCache = makeCache(60 * 60 * 1000);
+const ocmCache = makeCache(30 * 60 * 1000);
+const routeCache = makeCache(10 * 60 * 1000);
+
+app.get("/api/geocode", async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim();
+    if (!q) return res.status(400).json({ error: "q required" });
+
+    const key = `geo:${q.toLowerCase()}`;
+    const data = await geoCache.getOrSet(key, async () => {
+      const { data } = await withRetry(() =>
+        axios.get("https://nominatim.openstreetmap.org/search", {
+          params: {
+            q: q + ", France",
+            format: "json",
+            addressdetails: 1,
+            limit: 1,
+            countrycodes: "fr",
+          },
+          headers: UA,
+        })
+      );
+      if (!data?.length)
+        throw Object.assign(new Error("not found"), { code: 404 });
+      return {
+        lat: +data[0].lat,
+        lng: +data[0].lon,
+        displayName: data[0].display_name,
+      };
+    });
+    res.json(data);
+  } catch (e) {
+    const s = e?.code === 404 ? 404 : 500;
+    res.status(s).json({ error: e?.message || "geocode error" });
+  }
+});
+
+async function getRoute(origin, destination, departAtISO) {
+  const key = `route:${origin.lat.toFixed(4)},${origin.lng.toFixed(
+    4
+  )}-${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}`;
+  return routeCache.getOrSet(key, async () => {
+    const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
+    const { data } = await withRetry(() =>
+      axios.get(url, {
+        params: {
+          overview: "full",
+          geometries: "polyline",
+          alternatives: false,
+        },
+        headers: UA,
+      })
+    );
+    const r = data.routes?.[0];
+    if (!r) throw new Error("route not found");
+    const coords = polyline
+      .decode(r.geometry)
+      .map(([lat, lng]) => ({ lat, lng }));
+    const depart = departAtISO ? new Date(departAtISO) : new Date();
+    return {
+      distanceKm: r.distance / 1000,
+      durationMin: r.duration / 60,
+      geometry: r.geometry,
+      coords,
+      depart,
+    };
+  });
+}
+
 function haversine(a, b) {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const la1 = (a.lat * Math.PI) / 180;
-  const la2 = (b.lat * Math.PI) / 180;
+  const R = 6371,
+    dLat = ((b.lat - a.lat) * Math.PI) / 180,
+    dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180,
+    la2 = (b.lat * Math.PI) / 180;
   const x =
     Math.sin(dLat / 2) ** 2 +
     Math.sin(dLng / 2) ** 2 * Math.cos(la1) * Math.cos(la2);
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-
-function pickUniformProbes(coords, max = PROBES_MAX) {
-  if (coords.length <= max) return coords;
-  const step = Math.floor(coords.length / max);
+function sampleEveryNkm(coords, stepKm = 10) {
   const out = [];
-  for (let i = step; i < coords.length - 1; i += step) out.push(coords[i]);
-  return out.slice(0, max);
+  let acc = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const d = haversine(coords[i - 1], coords[i]);
+    acc += d;
+    if (acc >= stepKm) {
+      out.push(coords[i]);
+      acc = 0;
+    }
+  }
+  if (!out.length) out.push(coords[Math.floor(coords.length / 2)]);
+  return out;
+}
+function dedupeByGrid(points, cellKm = 5) {
+  const cellDeg = cellKm / 111;
+  const set = new Set();
+  const out = [];
+  for (const p of points) {
+    const k = `${Math.round(p.lat / cellDeg)}:${Math.round(p.lng / cellDeg)}`;
+    if (!set.has(k)) {
+      set.add(k);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
-async function getRoute(origin, destination, departAtISO) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=polyline&alternatives=false`;
-  const { data } = await axios.get(url, { timeout: AXIOS_TIMEOUT_MS });
-  const r = data.routes?.[0];
-  if (!r) throw new Error("route not found");
-  const coords = polyline
-    .decode(r.geometry)
-    .map(([lat, lng]) => ({ lat, lng }));
-  const depart = departAtISO ? new Date(departAtISO) : new Date();
-  return {
-    distanceKm: r.distance / 1000,
-    durationMin: r.duration / 60,
-    geometry: r.geometry,
-    coords,
-    depart,
-  };
+const OCM_KEY = process.env.OCM_KEY || "";
+const OCM_BASE = "https://api.openchargemap.io/v3/poi";
+
+async function fetchStationsAround(pt, distanceKm = 2) {
+  const key = `ocm:${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}:d${distanceKm}`;
+  return ocmCache.getOrSet(key, async () => {
+    const { data } = await withRetry(() =>
+      axios.get(OCM_BASE, {
+        params: {
+          output: "json",
+          latitude: pt.lat,
+          longitude: pt.lng,
+          distance: distanceKm,
+          distanceunit: "KM",
+          maxresults: 40,
+          compact: true,
+          key: OCM_KEY || undefined,
+        },
+        headers: UA,
+      })
+    );
+    return (data || []).map((p) => {
+      const maxKW = (p.Connections || [])
+        .map((c) => c.PowerKW || 0)
+        .reduce((m, v) => Math.max(m, v), 0);
+      const type = maxKW >= 50 ? "DC" : "AC";
+      return {
+        id: p.ID,
+        name: p.AddressInfo?.Title || "Charge point",
+        lat: p.AddressInfo?.Latitude,
+        lng: p.AddressInfo?.Longitude,
+        powerKw: maxKW || 11,
+        type,
+      };
+    });
+  });
 }
 
-async function fetchStationsAround({ lat, lng }, distanceKm = PROBE_RADIUS_KM) {
-  const { data } = await axios.get("https://api.openchargemap.io/v3/poi", {
-    params: {
-      output: "json",
-      latitude: lat,
-      longitude: lng,
-      distance: distanceKm,
-      distanceunit: "KM",
-      maxresults: 50,
-      compact: true,
-      key: OCM_KEY,
-    },
-    headers: { "User-Agent": "GreenCharge/1.0" },
-    timeout: AXIOS_TIMEOUT_MS,
+async function mapLimit(arr, limit, fn) {
+  const ret = [];
+  let i = 0;
+  const workers = Array.from({ length: limit }, async () => {
+    while (i < arr.length) {
+      const idx = i++;
+      ret[idx] = await fn(arr[idx], idx);
+    }
   });
-  return (data || []).map((p) => {
-    const maxKW = (p.Connections || [])
-      .map((c) => c.PowerKW || 0)
-      .reduce((m, v) => Math.max(m, v), 0);
-    const type = maxKW >= 50 ? "DC" : "AC";
-    return {
-      id: p.ID,
-      name: p.AddressInfo?.Title || "Charge point",
-      lat: p.AddressInfo?.Latitude,
-      lng: p.AddressInfo?.Longitude,
-      powerKw: maxKW || 11,
-      type,
-    };
-  });
+  await Promise.all(workers);
+  return ret;
+}
+
+async function fetchStationsAlongRoute(coords) {
+  const samples = dedupeByGrid(sampleEveryNkm(coords, 10), 5);
+  const lists = await mapLimit(samples, 2, (pt) => fetchStationsAround(pt, 2));
+  const all = lists.flat();
+
+  return Array.from(new Map(all.map((s) => [s.id, s])).values());
 }
 
 function pickBest(stations, departDate, energyKWh, vehicleACmax = 11) {
@@ -119,7 +233,6 @@ function pickBest(stations, departDate, energyKWh, vehicleACmax = 11) {
     const type = s.type;
     const P = type === "AC" ? Math.min(s.powerKw, vehicleACmax) : s.powerKw;
     const tH = energyKWh / (P * 0.9);
-
     const nowCost = energyKWh * priceAt(type, departDate);
     const endNow = new Date(departDate.getTime() + tH * 3600 * 1000);
 
@@ -137,8 +250,7 @@ function pickBest(stations, departDate, energyKWh, vehicleACmax = 11) {
 
     const hcCost = energyKWh * priceAt(type, nextHC);
     const endHC = new Date(nextHC.getTime() + tH * 3600 * 1000);
-
-    if (hcCost < choice.cost) {
+    if (hcCost < choice.cost)
       choice = {
         start: nextHC,
         end: endHC,
@@ -146,43 +258,11 @@ function pickBest(stations, departDate, energyKWh, vehicleACmax = 11) {
         reason: "offpeak",
         station: s,
       };
-    }
+
     if (!best || choice.cost < best.cost) best = choice;
   }
   return best;
 }
-
-app.get("/", (_, res) => res.send("GreenCharge API OK"));
-
-app.get("/api/geocode", async (req, res) => {
-  try {
-    const q = req.query.q;
-    if (!q) return res.status(400).json({ error: "q required" });
-    const { data } = await axios.get(
-      "https://nominatim.openstreetmap.org/search",
-      {
-        params: {
-          q: q + ", France",
-          format: "json",
-          addressdetails: 1,
-          limit: 1,
-          countrycodes: "fr",
-        },
-        headers: { "User-Agent": "GreenCharge/1.0" },
-        timeout: AXIOS_TIMEOUT_MS,
-      }
-    );
-    if (!data?.length) return res.status(404).json({ error: "not found" });
-    res.json({
-      lat: +data[0].lat,
-      lng: +data[0].lon,
-      displayName: data[0].display_name,
-    });
-  } catch (e) {
-    console.error("GEOCODE_ERR", e?.message || e);
-    res.status(500).json({ error: "geocode error" });
-  }
-});
 
 app.post("/api/plan", async (req, res) => {
   try {
@@ -194,17 +274,12 @@ app.post("/api/plan", async (req, res) => {
       departAtISO,
       forceCharge = false,
       topupKWh = 10,
-    } = req.body;
+    } = req.body || {};
 
     if (!origin || !destination)
       return res.status(400).json({ error: "origin/destination required" });
 
     const route = await getRoute(origin, destination, departAtISO);
-    console.log("PLAN", {
-      distKm: +route.distanceKm.toFixed(1),
-      probes: PROBES_MAX,
-    });
-
     const E0 = (autonomyKm * cWhPerKm) / 1000;
     const Eneed = ((route.distanceKm * cWhPerKm) / 1000) * 1.1;
 
@@ -223,25 +298,10 @@ app.post("/api/plan", async (req, res) => {
     const deficit = +(Eneed - E0).toFixed(1);
     const Emin = deficit > 0 ? deficit : Math.max(topupKWh, 5);
 
-    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-
-    const probes = pickUniformProbes(route.coords, PROBES_MAX);
-    const all = [];
-    for (const pt of probes) {
-      try {
-        const stationsHere = await fetchStationsAround(pt, PROBE_RADIUS_KM);
-        all.push(...stationsHere);
-      } catch {}
-      await sleep(120);
-    }
-
-    const stations = Array.from(new Map(all.map((s) => [s.id, s])).values());
+    const stations = await fetchStationsAlongRoute(route.coords);
 
     if (!stations.length) {
-      return res.status(429).json({
-        error: "no stations",
-        note: "Upstream rate-limited or no stations found along route. Please retry.",
-      });
+      return res.status(429).json({ error: "rate-limited or no stations" });
     }
 
     const best = pickBest(stations, route.depart, Emin);
@@ -267,12 +327,10 @@ app.post("/api/plan", async (req, res) => {
       },
     });
   } catch (e) {
-    console.error("PLAN_ERR", e?.message || e);
-    res.status(500).json({ error: "server error" });
+    const status = e?.response?.status || 500;
+    res.status(status).json({ error: "server error" });
   }
 });
 
-if (process.env.VERCEL !== "1") {
-  app.listen(3001, () => console.log("http://localhost:3001"));
-}
-export default app;
+const port = process.env.PORT || 3001;
+app.listen(port, () => console.log(`http://localhost:${port}`));
