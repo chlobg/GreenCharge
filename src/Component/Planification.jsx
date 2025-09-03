@@ -2,22 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
 
+/* If VITE_API_BASE is set, we use it; otherwise default to your API domain */
 const API_BASE = (
   import.meta.env.VITE_API_BASE || "https://green-charge-api.vercel.app"
 ).replace(/\/+$/, "");
 const api = (p) => `${API_BASE}${p}`;
-
-async function readJson(res) {
-  if (!res.ok) {
-    let body = "";
-    try {
-      body = await res.text();
-    } catch {}
-    const msg = body || `${res.status} ${res.statusText}`;
-    throw new Error(msg);
-  }
-  return res.json();
-}
 
 function GreenChargeLogo() {
   return (
@@ -130,7 +119,6 @@ const DICTS = {
     calculating: "Đang tính...",
   },
 };
-
 export default function Planification() {
   const navigate = useNavigate();
 
@@ -165,17 +153,17 @@ export default function Planification() {
     setLoading(true);
 
     try {
-      if (!departAddr.trim() || !arriveeAddr.trim()) {
+      if (!departAddr.trim() || !arriveeAddr.trim())
         throw new Error(t.errEmpty);
-      }
 
-      // Geocode
+      // Geocode origin
       const g1 = await fetch(
         api(`/api/geocode?q=${encodeURIComponent(departAddr)}`)
       );
       if (!g1.ok) throw new Error(`Geocode origin failed (${g1.status})`);
       const origin = await g1.json();
 
+      // Geocode destination
       const g2 = await fetch(
         api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`)
       );
@@ -198,13 +186,14 @@ export default function Planification() {
       if (!res.ok) throw new Error(`Plan failed (${res.status})`);
       const data = await res.json();
 
-      if (!res.recommendation) {
+      /* ✅ FIX: use data.recommendation (not res.recommendation) */
+      if (!data.recommendation) {
         setResult({
           station: t.noStop,
           heure: "-",
           duree: "-",
           cout: "-",
-          note: res.note || t.noteOK,
+          note: data.note || t.noteOK,
         });
         localStorage.removeItem("gc_map");
         setLoading(false);

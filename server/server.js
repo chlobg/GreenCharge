@@ -11,6 +11,7 @@ const app = express();
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "https://green-charge.vercel.app",
+  "https://green-charge-api.vercel.app",
 ];
 const vercelPreviewRegex = /^https:\/\/.*\.vercel\.app$/;
 
@@ -30,10 +31,9 @@ app.options("*", cors());
 
 app.use(express.json());
 
-app.get("/", (_, res) => res.send("GreenCharge API OK"));
+app.get(["/", "/api"], (_, res) => res.send("GreenCharge API OK"));
 
 const OFFPEAK = { start: 22, end: 6 };
-
 const PRICES = {
   FR: {
     AC: { day: 0.28, night: 0.18 },
@@ -46,7 +46,6 @@ const PRICES = {
     currency: "VND",
   },
 };
-
 const OCM_KEY = process.env.OCM_KEY || "YOUR_OCM_KEY";
 
 const isOffpeak = (d) =>
@@ -60,19 +59,14 @@ const priceAt = (country, type, date) => {
   };
 };
 
-app.get("/geocode", async (req, res) => {
+app.get(["/geocode", "/api/geocode"], async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
     if (!q) return res.status(400).json({ error: "q required" });
 
     const url = "https://nominatim.openstreetmap.org/search";
     const { data } = await axios.get(url, {
-      params: {
-        q,
-        format: "json",
-        addressdetails: 1,
-        limit: 1,
-      },
+      params: { q, format: "json", addressdetails: 1, limit: 1 },
       headers: { "User-Agent": "GreenCharge/1.0" },
     });
 
@@ -90,6 +84,7 @@ app.get("/geocode", async (req, res) => {
       countryCode,
     });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: "geocode error" });
   }
 });
@@ -123,7 +118,6 @@ function haversine(a, b) {
     Math.sin(dLng / 2) ** 2 * Math.cos(la1) * Math.cos(la2);
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-
 function sampleEveryNkm(coords, stepKm = 2) {
   const out = [];
   let acc = 0;
@@ -153,7 +147,6 @@ async function fetchStationsAround({ lat, lng }, distanceKm = 1.5) {
     },
     headers: { "User-Agent": "GreenCharge/1.0" },
   });
-
   return (data || []).map((p) => {
     const maxKW = (p.Connections || [])
       .map((c) => c.PowerKW || 0)
@@ -220,7 +213,7 @@ function pickBest(
   return best;
 }
 
-app.post("/plan", async (req, res) => {
+app.post(["/plan", "/api/plan"], async (req, res) => {
   try {
     const {
       origin,
@@ -233,8 +226,9 @@ app.post("/plan", async (req, res) => {
       countryOverride,
     } = req.body;
 
-    if (!origin || !destination)
+    if (!origin || !destination) {
       return res.status(400).json({ error: "origin/destination required" });
+    }
 
     const route = await getRoute(origin, destination, departAtISO);
 
@@ -265,10 +259,7 @@ app.post("/plan", async (req, res) => {
 
     const samples = sampleEveryNkm(route.coords, 2);
     const all = [];
-    for (const pt of samples) {
-      const around = await fetchStationsAround(pt, 1.5);
-      all.push(...around);
-    }
+    for (const pt of samples) all.push(...(await fetchStationsAround(pt, 1.5)));
     const stations = Array.from(new Map(all.map((s) => [s.id, s])).values());
     if (!stations.length) return res.status(404).json({ error: "no stations" });
 
