@@ -195,7 +195,7 @@ export default function Planification() {
         topupKWh: 10,
       };
 
-      const res = await getJSON(api(`/api/plan`), {
+      const res = await fetch(`${API_BASE}/api/plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
