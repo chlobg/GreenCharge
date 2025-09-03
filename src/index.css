@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base app */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    @apply font-roboto;
+  }
+  body {
+    @apply bg-white text-gcNavy;
+  }
+  img {
+    @apply inline-block align-middle;
+  }
+}
