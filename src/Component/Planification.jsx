@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
 
-/* If VITE_API_BASE is set, we use it; otherwise default to your API domain */
 const API_BASE = (
   import.meta.env.VITE_API_BASE || "https://green-charge-api.vercel.app"
 ).replace(/\/+$/, "");
@@ -43,7 +42,7 @@ const DICTS = {
     hello: (name) => `Bonjour ${name}, ravi de vous revoir sur la route !`,
     title: "Où allez-vous ?",
     subtitle:
-      "On vous indique où et quand recharger en France pour payer moins cher.",
+      "On vous indique où et quand recharger en France et au Vietnam pour payer moins cher",
     autonomy: "Autonomie restante (Km)",
     depart: "Départ",
     arrivee: "Arrivée",
@@ -69,7 +68,8 @@ const DICTS = {
   en: {
     hello: (name) => `Hello ${name}, welcome back on the road!`,
     title: "Where are you going?",
-    subtitle: "We tell you where and when to charge in France for less.",
+    subtitle:
+      "We tell you where and when to recharge in France and Vietnam to pay less",
     autonomy: "Remaining range (Km)",
     depart: "Departure",
     arrivee: "Arrival",
@@ -95,7 +95,8 @@ const DICTS = {
   vi: {
     hello: (name) => `Xin chào ${name}, chúc bạn lái xe an toàn!`,
     title: "Bạn đi đâu?",
-    subtitle: "Chúng tôi gợi ý nơi và thời điểm sạc rẻ hơn tại Pháp.",
+    subtitle:
+      "Chúng tôi cho bạn biết nơi nào và khi nào nên nạp tiền ở Pháp và Việt Nam để trả ít hơn",
     autonomy: "Quãng đường còn lại (Km)",
     depart: "Điểm đi",
     arrivee: "Điểm đến",
@@ -156,21 +157,18 @@ export default function Planification() {
       if (!departAddr.trim() || !arriveeAddr.trim())
         throw new Error(t.errEmpty);
 
-      // Geocode origin
       const g1 = await fetch(
         api(`/api/geocode?q=${encodeURIComponent(departAddr)}`)
       );
       if (!g1.ok) throw new Error(`Geocode origin failed (${g1.status})`);
       const origin = await g1.json();
 
-      // Geocode destination
       const g2 = await fetch(
         api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`)
       );
       if (!g2.ok) throw new Error(`Geocode destination failed (${g2.status})`);
       const destination = await g2.json();
 
-      // Plan
       const res = await fetch(api("/api/plan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,7 +184,6 @@ export default function Planification() {
       if (!res.ok) throw new Error(`Plan failed (${res.status})`);
       const data = await res.json();
 
-      /* ✅ FIX: use data.recommendation (not res.recommendation) */
       if (!data.recommendation) {
         setResult({
           station: t.noStop,
