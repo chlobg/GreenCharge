@@ -18,9 +18,16 @@ app.get("/", (_, res) => res.send("GreenCharge API OK"));
 
 const OFFPEAK = { start: 22, end: 6 };
 const PRICES = {
-  AC: { day: 0.28, night: 0.18 },
-  DC: { day: 0.45, night: 0.35 },
+  FR: {
+    AC: { day: 0.28, night: 0.18 },
+    DC: { day: 0.45, night: 0.35 },
+  },
+  VN: {
+    AC: { day: 0.11, night: 0.09 },
+    DC: { day: 0.13, night: 0.11 },
+  },
 };
+
 const isOffpeak = (d) =>
   d.getHours() >= OFFPEAK.start || d.getHours() < OFFPEAK.end;
 const priceAt = (type, date) =>
@@ -37,7 +44,7 @@ async function withRetry(fn, { tries = 4, baseDelay = 400 } = {}) {
     } catch (e) {
       lastErr = e;
       const status = e?.response?.status;
-      // on ne retry que 429 ou 5xx
+
       if (!(status === 429 || (status >= 500 && status < 600))) break;
       const wait = baseDelay * Math.pow(2, i) + Math.random() * 200;
       await sleep(wait);
@@ -77,7 +84,6 @@ app.get("/api/geocode", async (req, res) => {
             format: "json",
             addressdetails: 1,
             limit: 1,
-            countrycodes: "fr",
           },
           headers: UA,
         })
