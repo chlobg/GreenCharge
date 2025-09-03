@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+// src/Component/Planification.jsx
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import polyline from "polyline";
 
@@ -32,10 +33,92 @@ const fmtLocalInput = (d = new Date()) =>
     d.getHours()
   )}:${pad(d.getMinutes())}`;
 
+const DICTS = {
+  fr: {
+    hello: (name) => `Bonjour ${name}, ravi de vous revoir sur la route !`,
+    title: "Où allez-vous ?",
+    subtitle:
+      "On vous indique où et quand recharger en France pour payer moins cher.",
+    autonomy: "Autonomie restante (Km)",
+    depart: "Départ",
+    arrivee: "Arrivée",
+    departPh: "ex: Nantes",
+    arriveePh: "ex: Paris",
+    departTime: "Heure de départ",
+    force: "Je veux recharger en route même si j’ai assez d’autonomie",
+    plan: "Planifier",
+    reco: "Recommandation",
+    stationReco: "Station recommandée",
+    chargeTime: "Heure de recharge",
+    duration: "Durée",
+    cost: "Coût estimé",
+    noteOK: "Trajet faisable sans arrêt",
+    seeMap: "Voir la map",
+    offpeakTag: " (heures creuses)",
+    noStop: "Pas d'arrêt nécessaire",
+    topupNote: "Recharge optionnelle (top-up économique)",
+    errEmpty: "Saisis une adresse de départ et d’arrivée.",
+    errGeo: "Adresses introuvables (France).",
+    calculating: "Calcul...",
+  },
+  en: {
+    hello: (name) => `Hello ${name}, welcome back on the road!`,
+    title: "Where are you going?",
+    subtitle: "We tell you where and when to charge in France for less.",
+    autonomy: "Remaining range (Km)",
+    depart: "Departure",
+    arrivee: "Arrival",
+    departPh: "e.g., Nantes",
+    arriveePh: "e.g., Paris",
+    departTime: "Departure time",
+    force: "I want to charge on the way even if I have enough range",
+    plan: "Plan",
+    reco: "Recommendation",
+    stationReco: "Recommended station",
+    chargeTime: "Charge time",
+    duration: "Duration",
+    cost: "Estimated cost",
+    noteOK: "Trip feasible without a stop",
+    seeMap: "Open map",
+    offpeakTag: " (off-peak)",
+    noStop: "No stop needed",
+    topupNote: "Optional top-up (cheaper)",
+    errEmpty: "Enter both departure and arrival.",
+    errGeo: "Addresses not found (France).",
+    calculating: "Calculating...",
+  },
+  vi: {
+    hello: (name) => `Xin chào ${name}, chúc bạn lái xe an toàn!`,
+    title: "Bạn đi đâu?",
+    subtitle: "Chúng tôi gợi ý nơi và thời điểm sạc rẻ hơn tại Pháp.",
+    autonomy: "Quãng đường còn lại (Km)",
+    depart: "Điểm đi",
+    arrivee: "Điểm đến",
+    departPh: "ví dụ: Nantes",
+    arriveePh: "ví dụ: Paris",
+    departTime: "Giờ khởi hành",
+    force: "Tôi muốn sạc dọc đường dù đủ pin",
+    plan: "Lập kế hoạch",
+    reco: "Gợi ý",
+    stationReco: "Trạm sạc được đề xuất",
+    chargeTime: "Thời gian sạc",
+    duration: "Thời lượng",
+    cost: "Chi phí ước tính",
+    noteOK: "Có thể đi hết hành trình không cần dừng",
+    seeMap: "Xem bản đồ",
+    offpeakTag: " (giờ thấp điểm)",
+    noStop: "Không cần dừng",
+    topupNote: "Sạc bổ sung (tiết kiệm)",
+    errEmpty: "Nhập điểm đi và điểm đến.",
+    errGeo: "Không tìm thấy địa chỉ (Pháp).",
+    calculating: "Đang tính...",
+  },
+};
+
 export default function Planification() {
   const navigate = useNavigate();
-  const [userName, setUserName] = useState("X");
 
+  const [userName, setUserName] = useState("X");
   const [autonomyKm, setAutonomyKm] = useState(120);
   const [departAddr, setDepartAddr] = useState("");
   const [arriveeAddr, setArriveeAddr] = useState("");
@@ -45,6 +128,11 @@ export default function Planification() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // langue depuis Authentification (localStorage.gc_lang), défaut FR
+  const lang = useMemo(() => localStorage.getItem("gc_lang") || "fr", []);
+  const t = DICTS[lang] || DICTS.fr;
+  const locale = lang === "fr" ? "fr-FR" : lang === "vi" ? "vi-VN" : "en-GB";
 
   useEffect(() => {
     const n = localStorage.getItem("gc_name");
@@ -63,7 +151,7 @@ export default function Planification() {
 
     try {
       if (!departAddr.trim() || !arriveeAddr.trim()) {
-        throw new Error("Saisis une adresse de départ et d’arrivée.");
+        throw new Error(t.errEmpty);
       }
 
       const g1 = await fetch(
@@ -72,8 +160,7 @@ export default function Planification() {
       const g2 = await fetch(
         `/api/geocode?q=${encodeURIComponent(arriveeAddr)}`
       ).then((r) => r.json());
-      if (g1.error || g2.error)
-        throw new Error("Adresses introuvables (France).");
+      if (g1.error || g2.error) throw new Error(t.errGeo);
 
       const payload = {
         origin: g1,
@@ -93,11 +180,11 @@ export default function Planification() {
 
       if (!res.recommendation) {
         setResult({
-          station: "Pas d'arrêt nécessaire",
+          station: t.noStop,
           heure: "-",
           duree: "-",
           cout: "-",
-          note: res.note || "Trajet faisable sans arrêt",
+          note: res.note || t.noteOK,
         });
         localStorage.removeItem("gc_map");
         setLoading(false);
@@ -111,9 +198,11 @@ export default function Planification() {
       setResult({
         station: res.recommendation.station.name,
         heure:
-          start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
-          (res.recommendation.reason === "offpeak" ? " (heures creuses)" : ""),
-        duree: `${minutes} minutes`,
+          start.toLocaleTimeString(locale, {
+            hour: "2-digit",
+            minute: "2-digit",
+          }) + (res.recommendation.reason === "offpeak" ? t.offpeakTag : ""),
+        duree: `${minutes} min`,
         cout: `${res.recommendation.estimatedCostEUR.toFixed(2)} €`,
         mode: res.recommendation.mode,
       });
@@ -127,7 +216,7 @@ export default function Planification() {
       );
     } catch (e) {
       console.error(e);
-      setErr(e?.message || "Erreur de calcul");
+      setErr(e?.message || "Error");
     } finally {
       setLoading(false);
     }
@@ -146,25 +235,16 @@ export default function Planification() {
         </header>
 
         <section className="mt-6 space-y-2">
-          <p className="text-base">
-            Bonjour <span className="font-semibold">{userName}</span>, ravi de
-            vous revoir sur la route !
-          </p>
-          <h1 className="text-xl font-semibold text-[#153761]">
-            Où allez-vous ?
-          </h1>
-          <p className="text-sm text-slate-600">
-            On vous indique où et quand recharger en{" "}
-            <span className="text-green-600 font-medium">France</span> pour
-            payer moins cher.
-          </p>
+          <p className="text-base">{t.hello(userName)}</p>
+          <h1 className="text-xl font-semibold text-[#153761]">{t.title}</h1>
+          <p className="text-sm text-slate-600">{t.subtitle}</p>
         </section>
 
         <section className="mt-5 rounded-md bg-slate-100 p-4">
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="mb-2 block text-sm font-semibold">
-                Autonomie restante (Km)
+                {t.autonomy}
               </label>
               <div className="flex items-center gap-3">
                 <input
@@ -184,11 +264,11 @@ export default function Planification() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Départ
+                  {t.depart}
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Nantes"
+                  placeholder={t.departPh}
                   value={departAddr}
                   onChange={(e) => setDepartAddr(e.target.value)}
                   className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
@@ -197,11 +277,11 @@ export default function Planification() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Arrivée
+                  {t.arrivee}
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Paris"
+                  placeholder={t.arriveePh}
                   value={arriveeAddr}
                   onChange={(e) => setArriveeAddr(e.target.value)}
                   className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
@@ -213,7 +293,7 @@ export default function Planification() {
             <div className="space-y-2">
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Heure de départ
+                  {t.departTime}
                 </label>
                 <input
                   type="datetime-local"
@@ -231,7 +311,7 @@ export default function Planification() {
                   onChange={(e) => setForceCharge(e.target.checked)}
                   className="h-4 w-4 accent-green-600"
                 />
-                Je veux recharger en route même si j’ai assez d’autonomie
+                {t.force}
               </label>
             </div>
 
@@ -240,41 +320,37 @@ export default function Planification() {
               disabled={loading}
               className="w-full rounded-md bg-[#18324B] py-3 text-center text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loading ? "Calcul..." : "Planifier"}
+              {loading ? t.calculating : t.plan}
             </button>
           </form>
           {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
         </section>
 
         <section className="mt-6">
-          <h2 className="text-lg font-semibold text-[#153761]">
-            Recommandation
-          </h2>
+          <h2 className="text-lg font-semibold text-[#153761]">{t.reco}</h2>
           <div className="mt-3 grid grid-cols-3 gap-3">
             <div className="col-span-2 rounded-md border border-slate-200 p-4">
               <p className="font-semibold">
-                {result?.station || "Station recommandée"}
+                {result?.station || t.stationReco}
               </p>
               <div className="mt-2 space-y-1 text-sm text-slate-700">
                 <p>
-                  <span className="font-medium">Heure de recharge :</span>{" "}
+                  <span className="font-medium">{t.chargeTime} :</span>{" "}
                   {result?.heure || "-"}
                 </p>
                 <p>
-                  <span className="font-medium">Durée :</span>{" "}
+                  <span className="font-medium">{t.duration} :</span>{" "}
                   {result?.duree || "-"}
                 </p>
                 <p>
-                  <span className="font-medium">Coût estimé :</span>{" "}
+                  <span className="font-medium">{t.cost} :</span>{" "}
                   {result?.cout || "-"}
                 </p>
                 {result?.note && (
                   <p className="text-slate-500">{result.note}</p>
                 )}
                 {result?.mode === "topup" && (
-                  <p className="text-xs text-slate-500">
-                    Recharge optionnelle (top-up économique)
-                  </p>
+                  <p className="text-xs text-slate-500">{t.topupNote}</p>
                 )}
               </div>
             </div>
@@ -283,7 +359,7 @@ export default function Planification() {
               className="group flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-md bg-slate-100 text-sm font-medium text-slate-700 hover:bg-slate-200"
               onClick={openMap}
             >
-              Voir la map
+              {t.seeMap}
               <svg
                 aria-hidden
                 className="h-8 w-8 text-red-500"

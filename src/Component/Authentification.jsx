@@ -52,18 +52,26 @@ export default function Authentification() {
   const [name, setName] = useState("");
 
   useEffect(() => {
+    document.documentElement.lang = lang;
+    localStorage.setItem("gc_lang", lang);
+  }, [lang]);
+
+  useEffect(() => {
     const saved = localStorage.getItem("gc_name");
     if (saved) navigate("/planification", { replace: true });
   }, [navigate]);
 
   const t = messages[lang];
 
+  const handleLangChange = (code) => {
+    setLang(code);
+  };
+
   const onSubmit = (e) => {
     e.preventDefault();
     const clean = name.trim();
     if (!clean) return;
     localStorage.setItem("gc_name", clean);
-    localStorage.setItem("gc_lang", lang);
     navigate("/planification");
   };
 
@@ -77,21 +85,21 @@ export default function Authentification() {
         <div className="mt-8 flex items-center justify-center gap-6 text-3xl">
           <button
             aria-label="Vietnamese"
-            onClick={() => setLang("vi")}
+            onClick={() => handleLangChange("vi")}
             className={lang === "vi" ? "scale-110" : ""}
           >
             🇻🇳
           </button>
           <button
             aria-label="English"
-            onClick={() => setLang("en")}
+            onClick={() => handleLangChange("en")}
             className={lang === "en" ? "scale-110" : ""}
           >
             🇬🇧
           </button>
           <button
             aria-label="Français"
-            onClick={() => setLang("fr")}
+            onClick={() => handleLangChange("fr")}
             className={lang === "fr" ? "scale-110" : ""}
           >
             🇫🇷
