@@ -60,7 +60,7 @@ const priceAt = (country, type, date) => {
   };
 };
 
-app.get("/api/geocode", async (req, res) => {
+app.get("/geocode", async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
     if (!q) return res.status(400).json({ error: "q required" });
@@ -220,7 +220,7 @@ function pickBest(
   return best;
 }
 
-app.post("/api/plan", async (req, res) => {
+app.post("/plan", async (req, res) => {
   try {
     const {
       origin,
