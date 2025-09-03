@@ -169,30 +169,34 @@ export default function Planification() {
         throw new Error(t.errEmpty);
       }
 
-      const g1 = await readJson(
-        await fetch(api(`/api/geocode?q=${encodeURIComponent(departAddr)}`))
+      // Geocode
+      const g1 = await fetch(
+        api(`/api/geocode?q=${encodeURIComponent(departAddr)}`)
       );
-      const g2 = await readJson(
-        await fetch(api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`))
-      );
-      if (g1.error || g2.error) throw new Error(t.errGeo);
+      if (!g1.ok) throw new Error(`Geocode origin failed (${g1.status})`);
+      const origin = await g1.json();
 
-      const payload = {
-        origin: g1,
-        destination: g2,
-        departAtISO: new Date(departTime).toISOString(),
-        autonomyKm,
-        forceCharge,
-        topupKWh: 10,
-      };
-
-      const res = await readJson(
-        await fetch(api("/api/plan"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
+      const g2 = await fetch(
+        api(`/api/geocode?q=${encodeURIComponent(arriveeAddr)}`)
       );
+      if (!g2.ok) throw new Error(`Geocode destination failed (${g2.status})`);
+      const destination = await g2.json();
+
+      // Plan
+      const res = await fetch(api("/api/plan"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          origin,
+          destination,
+          departAtISO: new Date(departTime).toISOString(),
+          autonomyKm,
+          forceCharge,
+          topupKWh: 10,
+        }),
+      });
+      if (!res.ok) throw new Error(`Plan failed (${res.status})`);
+      const data = await res.json();
 
       if (!res.recommendation) {
         setResult({
@@ -207,27 +211,35 @@ export default function Planification() {
         return;
       }
 
-      const start = new Date(res.recommendation.startISO);
-      const end = new Date(res.recommendation.endISO);
+      const rec = data.recommendation;
+      const start = new Date(rec.startISO);
+      const end = new Date(rec.endISO);
       const minutes = Math.round((end - start) / 60000);
 
+      const costStr =
+        rec.estimatedCost == null
+          ? "-"
+          : rec.currency === "VND"
+          ? `${rec.estimatedCost.toLocaleString("vi-VN")} ₫`
+          : `${rec.estimatedCost.toFixed(2)} €`;
+
       setResult({
-        station: res.recommendation.station.name,
+        station: rec.station.name,
         heure:
           start.toLocaleTimeString(locale, {
             hour: "2-digit",
             minute: "2-digit",
-          }) + (res.recommendation.reason === "offpeak" ? t.offpeakTag : ""),
+          }) + (rec.reason === "offpeak" ? t.offpeakTag : ""),
         duree: `${minutes} min`,
-        cout: `${res.recommendation.estimatedCostEUR.toFixed(2)} €`,
-        mode: res.recommendation.mode,
+        cout: costStr,
+        mode: rec.mode,
       });
 
       localStorage.setItem(
         "gc_map",
         JSON.stringify({
-          station: res.recommendation.station,
-          route: { polyline: decodePolyline(res.route.polyline) },
+          station: rec.station,
+          route: { polyline: decodePolyline(data.route.polyline) },
         })
       );
     } catch (e) {
