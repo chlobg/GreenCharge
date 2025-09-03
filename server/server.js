@@ -34,8 +34,8 @@ const PRICES = {
 };
 const OCM_KEY = process.env.OCM_KEY || "YOUR_OCM_KEY";
 
-const PROBES_MAX = 12;
-const PROBE_RADIUS_KM = 3;
+const PROBES_MAX = 6;
+const PROBE_RADIUS_KM = 4;
 const AXIOS_TIMEOUT_MS = 5000;
 
 const isOffpeak = (d) =>
@@ -223,14 +223,17 @@ app.post("/api/plan", async (req, res) => {
     const deficit = +(Eneed - E0).toFixed(1);
     const Emin = deficit > 0 ? deficit : Math.max(topupKWh, 5);
 
-    const probes = pickUniformProbes(route.coords, PROBES_MAX);
-    const results = await Promise.allSettled(
-      probes.map((pt) => fetchStationsAround(pt, PROBE_RADIUS_KM))
-    );
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-    const all = results
-      .filter((r) => r.status === "fulfilled")
-      .flatMap((r) => r.value);
+    const probes = pickUniformProbes(route.coords, PROBES_MAX);
+    const all = [];
+    for (const pt of probes) {
+      try {
+        const stationsHere = await fetchStationsAround(pt, PROBE_RADIUS_KM);
+        all.push(...stationsHere);
+      } catch {}
+      await sleep(120);
+    }
 
     const stations = Array.from(new Map(all.map((s) => [s.id, s])).values());
 
